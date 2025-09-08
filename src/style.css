@@ -1,8 +1,72 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ===== Offcanvas 기본 ===== */
+:root {
+  --oc-width: 300px;      /* 패널 너비 */
+  --oc-z: 30;
+  --oc-backdrop: rgba(0,0,0,.35);
+}
 
-canvas {
-  border: 1px solid #ccc;
-  cursor: crosshair;
+.oc-panel {
+  position: absolute;
+  inset: 0 auto 0 0;      /* left dock */
+  width: var(--oc-width);
+  transform: translateX(calc(-1 * var(--oc-width)));
+  transition: transform .25s ease;
+  z-index: var(--oc-z);
+  background: #fff;
+  box-shadow: 2px 0 16px rgba(0,0,0,.12);
+  overflow: auto;
+}
+
+/* 열린 상태 */
+.oc-panel.open {
+  transform: translateX(0);
+}
+
+/* 캔버스 래퍼는 패널 상태에 따라 좌측 패딩을 갖는다 */
+.oc-canvas-wrap {
+  padding-left: 0;
+  transition: padding-left .25s ease;
+}
+.oc-canvas-wrap.shift {
+  padding-left: var(--oc-width);
+}
+
+/* 백드롭 (작은 화면에서만 보이게) */
+.oc-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--oc-backdrop);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease;
+  z-index: calc(var(--oc-z) - 1);
+}
+.oc-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 반응형: 1024px 이상에서는 항상 패널 열어두기 옵션 원하면 여기에서 조정 가능 */
+@media (min-width: 1024px) {
+  /* 초기값을 열림으로 하고 싶으면 아래 두 줄의 주석을 해제하세요 */
+  /* .oc-panel { transform: translateX(0); }        */
+  /* .oc-canvas-wrap { padding-left: var(--oc-width);} */
+}
+
+/* ===== Canvas 표시 품질 ===== */
+#drawingCanvas {
+  image-rendering: optimizeSpeed;
+  width: 100%;
+  height: 100%;
+  /* grid 배경 기본 off */
+  background: #ffffff;
+}
+
+/* ✅ 모눈 그리드 on (spacing=25px) */
+#drawingCanvas.grid-on {
+  background:
+    linear-gradient(#e0e0e0 1px, transparent 1px),
+    linear-gradient(90deg, #e0e0e0 1px, transparent 1px);
+  background-size: 25px 25px;
+  background-color: #ffffff;
 }

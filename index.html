@@ -1,110 +1,195 @@
-<!DOCTYPE html>
-<html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Canvas Drawing Tool</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script type="module" src="/src/main.js"></script>
-  </head>
+<script>
+// ===== DOM =====
+const canvas = document.getElementById("drawingCanvas");
+const ctx = canvas.getContext("2d");
 
-  <body class="bg-gray-100 min-h-screen flex flex-col">
-    <!-- 헤더 -->
-    <header class="flex items-center h-14 bg-white shadow px-4">
-      <button id="sidebarToggle" class="p-2 rounded hover:bg-gray-100">
-        <!-- 햄버거 -->
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"
-          viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round"
-            d="M4 6h16M4 12h16M4 18h16"/>
-        </svg>
-      </button>
-      <h1 class="ml-3 font-bold">🎨 Web Drawing Tool</h1>
-    </header>
+const colorPicker = document.getElementById("colorPicker");
+const brushSizeInput = document.getElementById("brushSize");
+const toolSelect = document.getElementById("toolSelect");
+const gridToggle = document.getElementById("gridToggle");
+const clearBtn = document.getElementById("clearBtn");
+const savePngBtn = document.getElementById("savePngBtn");
+const saveJpgBtn = document.getElementById("saveJpgBtn");
 
-    <div class="flex flex-1 overflow-hidden">
-      <!-- ✅ 사이드바 -->
-      <aside id="sidebar"
-        class="fixed top-14 left-0 w-64 h-[calc(100%-56px)] bg-white border-r transform -translate-x-full transition-transform duration-300 z-20">
-        <div class="p-4 space-y-4">
-          <div>
-            <label class="block text-sm font-medium mb-1">색상</label>
-            <input type="color" id="colorPicker"
-              class="w-12 h-12 border rounded" value="#000000"/>
-          </div>
+const sidebar = document.getElementById("sidebar");
+const overlay = document.getElementById("overlay");
+const toggleBtn = document.getElementById("sidebarToggle");
+const mainArea = document.getElementById("mainArea");
 
-          <div>
-            <label class="block text-sm font-medium mb-1">브러시 크기</label>
-            <input type="range" id="brushSize" min="1" max="50" value="5"
-              class="w-full"/>
-          </div>
+// ===== State =====
+let drawing = false;
+let startX = 0, startY = 0;
+let brushColor = colorPicker.value;
+let brushSize = Number(brushSizeInput.value);
+let currentTool = toolSelect.value || "pen";
 
-          <div>
-            <label class="block text-sm font-medium mb-1">도구</label>
-            <select id="toolSelect" class="w-full border rounded p-2">
-              <option value="pen">펜</option>
-              <option value="eraser">지우개</option>
-              <option value="line">직선</option>
-              <option value="rect">사각형</option>
-              <option value="circle">원</option>
-            </select>
-          </div>
+// ===== Utils =====
+function setCompositeForTool(tool) {
+  if (tool === "eraser") {
+    ctx.globalCompositeOperation = "destination-out";
+  } else {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = brushColor;
+    ctx.fillStyle = brushColor;
+  }
+  ctx.lineWidth = brushSize;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+}
 
-          <label class="flex items-center gap-2">
-            <input type="checkbox" id="gridToggle" class="w-5 h-5" /> 모눈 종이
-          </label>
+function takeSnapshot() {
+  const snap = document.createElement("canvas");
+  snap.width = canvas.width;
+  snap.height = canvas.height;
+  snap.getContext("2d").drawImage(canvas, 0, 0);
+  return snap;
+}
+function restoreSnapshot(snap, scale = false) {
+  if (!snap) return;
+  if (scale) ctx.drawImage(snap, 0, 0, canvas.width, canvas.height);
+  else ctx.drawImage(snap, 0, 0);
+}
 
-          <div class="flex flex-wrap gap-2 pt-2">
-            <button id="clearBtn"
-              class="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600">
-              Clear
-            </button>
-            <button id="savePngBtn"
-              class="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-              Save PNG
-            </button>
-            <button id="saveJpgBtn"
-              class="px-3 py-2 bg-green-500 text-white rounded hover:bg-green-600">
-              Save JPG
-            </button>
-          </div>
-        </div>
-      </aside>
+function getPos(e) {
+  const r = canvas.getBoundingClientRect();
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  const cy = e.touches ? e.touches[0].clientY : e.clientY;
+  return { x: cx - r.left, y: cy - r.top };
+}
 
-      <!-- ✅ 메인 영역 -->
-      <main id="mainArea" class="flex-1 ml-0 transition-all duration-300">
-        <canvas id="drawingCanvas" class="w-full h-full bg-white"></canvas>
-      </main>
-    </div>
+// ===== Resize (DPR 맞춤) =====
+function resizeCanvas() {
+  const snap = takeSnapshot();
 
-    <!-- 오버레이 (모바일) -->
-    <div id="overlay"
-      class="fixed inset-0 bg-black/40 hidden z-10"></div>
+  const root = mainArea || canvas.parentElement || document.body;
+  const rect = root.getBoundingClientRect();
+  const targetW = Math.max(240, Math.floor(rect.width));
+  const targetH = Math.max(240, Math.floor(rect.height));
 
-    <script>
-      const sidebar = document.getElementById("sidebar");
-      const overlay = document.getElementById("overlay");
-      const toggleBtn = document.getElementById("sidebarToggle");
-      const mainArea = document.getElementById("mainArea");
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = `${targetW}px`;
+  canvas.style.height = `${targetH}px`;
+  canvas.width = Math.floor(targetW * dpr);
+  canvas.height = Math.floor(targetH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      function openSidebar() {
-        sidebar.classList.remove("-translate-x-full");
-        overlay.classList.remove("hidden");
-        mainArea.classList.add("ml-64");
-      }
-      function closeSidebar() {
-        sidebar.classList.add("-translate-x-full");
-        overlay.classList.add("hidden");
-        mainArea.classList.remove("ml-64");
-      }
+  restoreSnapshot(snap, true);
+}
+window.addEventListener("resize", resizeCanvas);
 
-      toggleBtn.addEventListener("click", () => {
-        if (sidebar.classList.contains("-translate-x-full")) {
-          openSidebar();
-        } else {
-          closeSidebar();
-        }
-      });
-      overlay.addEventListener("click", closeSidebar);
-    </script>
-  </body>
-</html>
+// ===== Sidebar toggle + overlay =====
+function openSidebar() {
+  sidebar.classList.remove("-translate-x-full");
+  overlay.classList.remove("hidden");
+  mainArea.classList.add("ml-64");
+  resizeCanvas();
+}
+function closeSidebar() {
+  sidebar.classList.add("-translate-x-full");
+  overlay.classList.add("hidden");
+  mainArea.classList.remove("ml-64");
+  resizeCanvas();
+}
+toggleBtn.addEventListener("click", () => {
+  sidebar.classList.contains("-translate-x-full") ? openSidebar() : closeSidebar();
+});
+overlay.addEventListener("click", closeSidebar);
+
+// ===== Grid toggle (CSS 클래스 토글) =====
+gridToggle.addEventListener("change", (e) => {
+  canvas.classList.toggle("grid-on", e.target.checked);
+});
+
+// ===== Drawing =====
+function onDown(e) {
+  e.preventDefault();
+  drawing = true;
+  const { x, y } = getPos(e);
+  startX = x; startY = y;
+
+  if (currentTool === "pen" || currentTool === "eraser") {
+    setCompositeForTool(currentTool);
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+  }
+}
+function onMove(e) {
+  if (!drawing) return;
+  if (currentTool !== "pen" && currentTool !== "eraser") return;
+  const { x, y } = getPos(e);
+  setCompositeForTool(currentTool);
+  ctx.lineTo(x, y);
+  ctx.stroke();
+}
+function onUp(e) {
+  if (!drawing) return;
+  drawing = false;
+  const { x: endX, y: endY } = getPos(e);
+  setCompositeForTool(currentTool);
+
+  if (currentTool === "line") {
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+  } else if (currentTool === "rect") {
+    ctx.strokeRect(startX, startY, endX - startX, endY - startY);
+  } else if (currentTool === "circle") {
+    const r = Math.hypot(endX - startX, endY - startY);
+    ctx.beginPath();
+    ctx.arc(startX, startY, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+// Mouse + Touch
+canvas.addEventListener("mousedown", onDown);
+canvas.addEventListener("mousemove", onMove);
+window.addEventListener("mouseup", onUp);
+canvas.addEventListener("touchstart", onDown, { passive: false });
+canvas.addEventListener("touchmove", onMove, { passive: false });
+window.addEventListener("touchend", onUp);
+
+// ===== Controls =====
+colorPicker.addEventListener("input", (e) => { brushColor = e.target.value; });
+brushSizeInput.addEventListener("input", (e) => { brushSize = Number(e.target.value); });
+toolSelect.addEventListener("change", (e) => { currentTool = e.target.value; setCompositeForTool(currentTool); });
+
+// Clear
+clearBtn.addEventListener("click", () => {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+});
+
+// Save (PNG/JPEG)
+function saveCanvas(type = "png") {
+  if (type === "png") {
+    const a = document.createElement("a");
+    a.download = "drawing.png";
+    a.href = canvas.toDataURL("image/png");
+    a.click();
+    return;
+  }
+  // JPEG: 흰 배경 합성
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = parseFloat(getComputedStyle(canvas).width);
+  const cssH = parseFloat(getComputedStyle(canvas).height);
+  const ex = document.createElement("canvas");
+  ex.width = Math.floor(cssW * dpr);
+  ex.height = Math.floor(cssH * dpr);
+  const exCtx = ex.getContext("2d");
+  exCtx.fillStyle = "#ffffff";
+  exCtx.fillRect(0, 0, ex.width, ex.height);
+  exCtx.drawImage(canvas, 0, 0);
+  const a = document.createElement("a");
+  a.download = "drawing.jpg";
+  a.href = ex.toDataURL("image/jpeg", 0.92);
+  a.click();
+}
+savePngBtn.addEventListener("click", () => saveCanvas("png"));
+saveJpgBtn.addEventListener("click", () => saveCanvas("jpeg"));
+
+// ===== Init =====
+document.body.style.userSelect = "none";
+setCompositeForTool(currentTool);
+resizeCanvas();
+</script>

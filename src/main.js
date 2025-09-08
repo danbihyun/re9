@@ -1,149 +1,115 @@
-// =======================
-// Canvas Drawing Tool - Offcanvas 버전
-// =======================
-
-// DOM
+// ===== DOM 참조 =====
 const canvas = document.getElementById("drawingCanvas");
 const ctx = canvas.getContext("2d");
 
-const gridToggle = document.getElementById("gridToggle");
-const colorPicker = document.getElementById("colorPicker");
-const brushSizeInput = document.getElementById("brushSize");
-const toolSelect = document.getElementById("toolSelect");
-const clearBtn = document.getElementById("clearBtn");
-const savePngBtn = document.getElementById("savePngBtn");
-const saveJpgBtn = document.getElementById("saveJpgBtn");
+// 컨트롤
+const colorPicker   = document.getElementById("colorPicker");
+const brushSizeInput= document.getElementById("brushSize");
+const toolSelect    = document.getElementById("toolSelect");
+const gridToggle    = document.getElementById("gridToggle");
+const clearBtn      = document.getElementById("clearBtn");
+const savePngBtn    = document.getElementById("savePngBtn");
+const saveJpgBtn    = document.getElementById("saveJpgBtn");
 
-// Offcanvas DOM
-const offcanvas = document.getElementById("offcanvas");
-const canvasWrap = document.getElementById("canvasWrap");
-const ocToggle = document.getElementById("ocToggle");
-const ocClose = document.getElementById("ocClose");
-const ocBackdrop = document.getElementById("ocBackdrop");
+// 사이드바(있으면 사용, 없으면 무시)
+const sidebarToggle = document.getElementById("sidebarToggle"); // 햄버거 버튼
+const sidebar       = document.getElementById("sidebar");
+const overlay       = document.getElementById("overlay");
+const mainArea      = document.getElementById("mainArea");
 
-// State
-let drawing = false;
+// ===== 상태 =====
+let drawing    = false;
 let startX = 0, startY = 0;
-let brushColor = colorPicker.value;
-let brushSize = Number(brushSizeInput.value);
-let currentTool = toolSelect.value || "pen";
-let useGrid = false;
-let ocOpen = false; // 오프캔버스 열린 상태
+let brushColor = (colorPicker && colorPicker.value) || "#000000";
+let brushSize  = (brushSizeInput && Number(brushSizeInput.value)) || 5;
+let currentTool= (toolSelect && toolSelect.value) || "pen";
 
 // ===== 유틸 =====
 function setCompositeForTool(tool) {
   if (tool === "eraser") {
-    ctx.globalCompositeOperation = "destination-out";
+    ctx.globalCompositeOperation = "destination-out"; // 투명 지우개
   } else {
-    ctx.globalCompositeOperation = "source-over";
+    ctx.globalCompositeOperation = "source-over";     // 일반 그리기
     ctx.strokeStyle = brushColor;
-    ctx.fillStyle = brushColor;
+    ctx.fillStyle   = brushColor;
   }
   ctx.lineWidth = brushSize;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
+  ctx.lineCap   = "round";
+  ctx.lineJoin  = "round";
+}
+
+function getPointerPos(evt) {
+  const rect = canvas.getBoundingClientRect();
+  const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+  const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+  return { x: clientX - rect.left, y: clientY - rect.top };
 }
 
 function takeSnapshot() {
   const snap = document.createElement("canvas");
   snap.width = canvas.width;
-  snap.height = canvas.height;
+  snap.height= canvas.height;
   snap.getContext("2d").drawImage(canvas, 0, 0);
   return snap;
 }
-
-function restoreSnapshot(snapshot, scaleToFit = false) {
-  if (!snapshot) return;
-  if (scaleToFit) {
-    ctx.drawImage(snapshot, 0, 0, canvas.width, canvas.height);
-  } else {
-    ctx.drawImage(snapshot, 0, 0);
-  }
+function restoreSnapshot(snap, scale = false) {
+  if (!snap) return;
+  if (scale) ctx.drawImage(snap, 0, 0, canvas.width, canvas.height);
+  else       ctx.drawImage(snap, 0, 0);
 }
 
-function getPointerPos(evt) {
-  const rect = canvas.getBoundingClientRect();
-  const x = (evt.clientX ?? evt.touches?.[0]?.clientX) - rect.left;
-  const y = (evt.clientY ?? evt.touches?.[0]?.clientY) - rect.top;
-  return { x, y };
-}
-
-// ===== Offcanvas 제어 =====
-function openOffcanvas() {
-  ocOpen = true;
-  offcanvas.classList.add("open");
-  canvasWrap.classList.add("shift");
-  ocBackdrop.classList.add("show");
-  // 레이아웃이 변하므로 리사이즈
-  resizeCanvas();
-}
-function closeOffcanvas() {
-  ocOpen = false;
-  offcanvas.classList.remove("open");
-  canvasWrap.classList.remove("shift");
-  ocBackdrop.classList.remove("show");
-  resizeCanvas();
-}
-function toggleOffcanvas() {
-  ocOpen ? closeOffcanvas() : openOffcanvas();
-}
-
-ocToggle.addEventListener("click", toggleOffcanvas);
-ocClose.addEventListener("click", closeOffcanvas);
-ocBackdrop.addEventListener("click", closeOffcanvas);
-
-// 단축키: Ctrl+B
-window.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "b")) {
-    e.preventDefault();
-    toggleOffcanvas();
-  }
-});
-
-// ===== 레티나 대응 + 가용 공간 기준 리사이즈 =====
+// ===== 리사이즈 (DPR 대응) =====
 function resizeCanvas() {
   const snapshot = takeSnapshot();
 
-  // 캔버스가 들어있는 래퍼의 실제 표시 영역을 읽어와서 정확히 맞춤
-  const wrapRect = canvasWrap.getBoundingClientRect();
-  const targetW = Math.max(240, Math.floor(wrapRect.width));
-  const targetH = Math.max(240, Math.floor(wrapRect.height));
+  const sizeRoot = mainArea || canvas.parentElement || document.body;
+  const r = sizeRoot.getBoundingClientRect();
+  const targetW = Math.max(240, Math.floor(r.width));
+  const targetH = Math.max(240, Math.floor(r.height));
 
   const dpr = window.devicePixelRatio || 1;
 
-  // CSS 크기(시각적)
-  canvas.style.width = `${targetW}px`;
+  canvas.style.width  = `${targetW}px`;
   canvas.style.height = `${targetH}px`;
-
-  // 픽셀 버퍼
-  canvas.width = Math.floor(targetW * dpr);
+  canvas.width  = Math.floor(targetW * dpr);
   canvas.height = Math.floor(targetH * dpr);
 
-  // 좌표계를 CSS 픽셀 기준으로 보정
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // 복원 (크기 달라졌으니 스케일 복원)
   restoreSnapshot(snapshot, true);
 }
+
 window.addEventListener("resize", resizeCanvas);
+resizeCanvas(); // 초기 1회
 
-// 초기 패널 상태 (원하면 데스크톱에서 기본 open으로 바꿔도 됨)
-closeOffcanvas();
+// ===== 모눈종이 (JS로 직접 background 세팅) =====
+function setGridBackground(on, spacing = 25, color = "#e0e0e0") {
+  if (on) {
+    canvas.style.backgroundImage =
+      `linear-gradient(${color} 1px, transparent 1px),` +
+      `linear-gradient(90deg, ${color} 1px, transparent 1px)`;
+    canvas.style.backgroundSize = `${spacing}px ${spacing}px`;
+    canvas.style.backgroundColor = "#ffffff";
+  } else {
+    // 기본 흰 배경 유지
+    canvas.style.backgroundImage = "none";
+    canvas.style.backgroundColor = "#ffffff";
+  }
+}
 
-// ===== 그리드 토글: CSS 클래스만 제어 =====
-gridToggle.addEventListener("change", (e) => {
-  useGrid = e.target.checked;
-  canvas.classList.toggle("grid-on", useGrid);
-});
+// 체크박스 이벤트
+if (gridToggle) {
+  gridToggle.addEventListener("change", (e) => {
+    setGridBackground(e.target.checked);
+  });
+}
 
 // ===== 드로잉 =====
 function onPointerDown(e) {
   e.preventDefault();
   drawing = true;
-
   const { x, y } = getPointerPos(e);
-  startX = x;
-  startY = y;
+  startX = x; startY = y;
 
   if (currentTool === "pen" || currentTool === "eraser") {
     setCompositeForTool(currentTool);
@@ -151,7 +117,6 @@ function onPointerDown(e) {
     ctx.moveTo(startX, startY);
   }
 }
-
 function onPointerMove(e) {
   if (!drawing) return;
   if (currentTool !== "pen" && currentTool !== "eraser") return;
@@ -161,7 +126,6 @@ function onPointerMove(e) {
   ctx.lineTo(x, y);
   ctx.stroke();
 }
-
 function onPointerUp(e) {
   if (!drawing) return;
   drawing = false;
@@ -177,8 +141,7 @@ function onPointerUp(e) {
   } else if (currentTool === "rect") {
     ctx.strokeRect(startX, startY, endX - startX, endY - startY);
   } else if (currentTool === "circle") {
-    const dx = endX - startX;
-    const dy = endY - startY;
+    const dx = endX - startX, dy = endY - startY;
     const radius = Math.hypot(dx, dy);
     ctx.beginPath();
     ctx.arc(startX, startY, radius, 0, Math.PI * 2);
@@ -186,70 +149,76 @@ function onPointerUp(e) {
   }
 }
 
-// 마우스 + 터치
+// 이벤트 등록 (마우스+터치)
 canvas.addEventListener("mousedown", onPointerDown);
 canvas.addEventListener("mousemove", onPointerMove);
 window.addEventListener("mouseup", onPointerUp);
-
 canvas.addEventListener("touchstart", onPointerDown, { passive: false });
 canvas.addEventListener("touchmove", onPointerMove, { passive: false });
 window.addEventListener("touchend", onPointerUp);
 
 // ===== 컨트롤 =====
-colorPicker.addEventListener("input", (e) => {
-  brushColor = e.target.value;
-});
+if (colorPicker) colorPicker.addEventListener("input", (e)=> { brushColor = e.target.value; });
+if (brushSizeInput) brushSizeInput.addEventListener("input", (e)=> { brushSize = Number(e.target.value); });
+if (toolSelect) toolSelect.addEventListener("change", (e)=> { currentTool = e.target.value; setCompositeForTool(currentTool); });
 
-brushSizeInput.addEventListener("input", (e) => {
-  brushSize = Number(e.target.value);
-});
-
-toolSelect.addEventListener("change", (e) => {
-  currentTool = e.target.value;
-  setCompositeForTool(currentTool);
-});
-
-// ===== Clear =====
-clearBtn.addEventListener("click", () => {
+// Clear
+if (clearBtn) clearBtn.addEventListener("click", ()=> {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 });
 
-// ===== 저장 =====
+// Save
 function saveCanvas(type = "png") {
   const dpr = window.devicePixelRatio || 1;
   const cssW = parseFloat(getComputedStyle(canvas).width);
   const cssH = parseFloat(getComputedStyle(canvas).height);
 
   if (type === "png") {
-    const link = document.createElement("a");
-    link.download = "drawing.png";
-    link.href = canvas.toDataURL("image/png");
-    link.click();
+    const a = document.createElement("a");
+    a.download = "drawing.png";
+    a.href = canvas.toDataURL("image/png");
+    a.click();
     return;
   }
 
-  // JPEG: 흰 배경 합성
+  // jpeg: 흰 배경 합성
   const exportCanvas = document.createElement("canvas");
-  exportCanvas.width = Math.floor(cssW * dpr);
+  exportCanvas.width  = Math.floor(cssW * dpr);
   exportCanvas.height = Math.floor(cssH * dpr);
+  const ex = exportCanvas.getContext("2d");
+  ex.fillStyle = "#ffffff";
+  ex.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+  ex.drawImage(canvas, 0, 0);
 
-  const exCtx = exportCanvas.getContext("2d");
-  exCtx.fillStyle = "#ffffff";
-  exCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-  exCtx.drawImage(canvas, 0, 0);
+  const a = document.createElement("a");
+  a.download = "drawing.jpg";
+  a.href = exportCanvas.toDataURL("image/jpeg", 0.92);
+  a.click();
+}
+if (savePngBtn) savePngBtn.addEventListener("click", () => saveCanvas("png"));
+if (saveJpgBtn) saveJpgBtn.addEventListener("click", () => saveCanvas("jpeg"));
 
-  const link = document.createElement("a");
-  link.download = "drawing.jpg";
-  link.href = exportCanvas.toDataURL("image/jpeg", 0.92);
-  link.click();
+// ===== 사이드바 토글(있을 때만) =====
+if (sidebar && overlay && sidebarToggle && mainArea) {
+  function openSidebar(){
+    sidebar.classList.remove("-translate-x-full");
+    overlay.classList.remove("hidden");
+    mainArea.classList.add("ml-64");
+    resizeCanvas();
+  }
+  function closeSidebar(){
+    sidebar.classList.add("-translate-x-full");
+    overlay.classList.add("hidden");
+    mainArea.classList.remove("ml-64");
+    resizeCanvas();
+  }
+  function toggleSidebar(){
+    sidebar.classList.contains("-translate-x-full") ? openSidebar() : closeSidebar();
+  }
+  sidebarToggle.addEventListener("click", toggleSidebar);
+  overlay.addEventListener("click", closeSidebar);
 }
 
-savePngBtn.addEventListener("click", () => saveCanvas("png"));
-saveJpgBtn.addEventListener("click", () => saveCanvas("jpeg"));
-
-// 초기 브러시/합성 설정 + 첫 리사이즈
+// 초기 설정
 setCompositeForTool(currentTool);
-resizeCanvas();
-
-// UX: 선택 방지
-document.body.style.userSelect = "none";
+document.body.style.userSelect = "none"; // 드래그 중 텍스트 선택 방지
